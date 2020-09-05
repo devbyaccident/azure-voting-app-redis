@@ -7,6 +7,8 @@ pipeline {
       steps {
         script {
           helloArgs('Jenkins!')
+          echo "$GIT_BRANCH"
+
         }
       }
     }
