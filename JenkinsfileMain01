@@ -1,17 +1,15 @@
 pipeline {
    agent { label 'master'}
-
    environment {
     PROJECT_NAME = 'myproject'
 	 DOCKER_REPO = 'demodocker'
-	 MS_NAME = 'vote-app'
+	 MS_NAME = 'vote_app'
     REGISTRY_URL = 'nexus:8082'
 	 DOCKER_REPO_PASSWORD = credentials('docker_api_token') 
     KUBETEST_CREDS = credentials('kubetest_config')
     FULL_PATH_BRANCH = "${sh(script:'git name-rev --name-only HEAD', returnStdout: true)}" 
     GIT_BRANCH = FULL_PATH_BRANCH.substring(FULL_PATH_BRANCH.lastIndexOf('/') + 1, FULL_PATH_BRANCH.length())
-   }
-
+    }
 
    stages {
       stage('Verify Branch') {
@@ -49,16 +47,16 @@ pipeline {
             sh(script: 'docker images -a')
             sh(script: """
                cd azure-vote/
+               docker images -a
                docker build -t jenkins-pipeline .
+               docker images -a
                cd ..
             """)
          }
       }
-
       stage('Start test app') {
          steps {
             sh(script: """
-               docker-compose down
                docker-compose up -d
                chmod +x ./scripts/test_container.sh
                ./scripts/test_container.sh
@@ -73,7 +71,6 @@ pipeline {
             }
          }
       }
-
       stage('Run Tests') {
          steps {
             sh(script: """
@@ -102,73 +99,27 @@ pipeline {
                steps {
                   sleep(time: 30, unit: 'SECONDS')
                    sh(script: """
-                   trivy    image  --exit-code 0 --severity MEDIUM,LOW  $REGISTRY_URL/$DOCKER_REPO/$PROJECT_NAME/$MS_NAME:$BUILD_TIMESTAMP # continue when find it MEDIUM,LOW 
-                   #trivy   image  --exit-code 1 --severity CRITICAL,HIGH $REGISTRY_URL/$DOCKER_REPO/$PROJECT_NAME/$MS_NAME:$BUILD_TIMESTAMP # stop pipeline when find it CRITICAL,HIGH 
+                   trivy  --clear-cache  image  --exit-code 0 --severity MEDIUM,LOW  $REGISTRY_URL/$DOCKER_REPO/$PROJECT_NAME/$MS_NAME:$BUILD_TIMESTAMP # continue when find it MEDIUM,LOW 
+                   #trivy  --clear-cache  image  --exit-code 1 --severity CRITICAL,HIGH $REGISTRY_URL/$DOCKER_REPO/$PROJECT_NAME/$MS_NAME:$BUILD_TIMESTAMP # stop pipeline when find it CRITICAL,HIGH 
                    """)
                }
             }
          }
       }
-      stage('Approve PROD Deploy') {
-         when {
-            branch 'master'
-         }
-         options {
-            timeout(time: 1, unit: 'HOURS') 
-         }
-         steps {
-            input message: "Deploy?"
-         }
-         post {
-            success {
-               echo "Production Deploy Approved"
-            }
-            aborted {
-               echo "Production Deploy Denied"
-            }
-         }
-      }
-
-      stage('Deploy to PROD') {
-         when {
-            branch 'master'
-         }
+      stage('Deploy to QA') {
          environment {
-            ENVIRONMENT = 'prod'
+            ENVIRONMENT = 'qa'
          }
          steps {
             echo "Deploying to ${ENVIRONMENT}"
             sh(script: """
-            sed -i  "s/ms-name/$MS_NAME/g ;  s/project_name/$PROJECT_NAME/g ;  s/test:latest/$MS_NAME:$BUILD_TIMESTAMP/g" azure-vote-all-in-one-redis.yaml
-            cat azure-vote-all-in-one-redis.yaml 
-            kubectl  apply -f  azure-vote-all-in-one-redis.yaml  --kubeconfig $KUBETEST_CREDS  --namespace $PROJECT_NAME-$ENVIRONMENT
+            sed -i  "s/ms-name/$MS_NAME/g ;  s/project_name/PROJECT_NAME/g ;  s/image_name/test:latest/g" azure-vote-all-in-one-redis.yaml
+            kubectl  deploy -f  azure-vote-all-in-one-redis.yaml  --kubeconfig $KUBETEST_CREDS  --namespace $PROJECT_NAME-$ENVIRONMENT
             """)
          }
       }
 
-      stage('Check App Started') {
-         when {
-            branch 'master'
-         }
-         environment {
-            ENVIRONMENT = 'prod'
-         }
-         steps {
-            echo "Check App Successfull deployed  to ${ENVIRONMENT}"
-                timeout(5) {
-            		waitUntil {
-                        script {
-                            def r = sh(script:" if [ \"\$(kubectl get pod --kubeconfig $KUBETEST_CREDS -o jsonpath=\"{..ready}\" -l app=$MS_NAME --namespace $PROJECT_NAME-$ENVIRONMENT)\" = \"false\" ]; then exit 1; else exit 0; fi", returnStatus: true)
-                            return (r == 0);
-                        }
-          	  		}
-       	 		}
-         }
-      }
-}
-    post {
-        always {
-            cleanWs()
-        }
-    }
+
+
+   }
 }

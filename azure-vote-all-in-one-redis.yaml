@@ -1,18 +1,19 @@
-apiVersion: apps/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: azure-vote-back
+  name: redis-app
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      app: redis-app
   template:
     metadata:
       labels:
-        app: azure-vote-back
+        app: redis-app
     spec:
-      nodeSelector:
-        "beta.kubernetes.io/os": linux
       containers:
-      - name: azure-vote-back
+      - name: redis-app
         image: redis
         ports:
         - containerPort: 6379
@@ -21,19 +22,22 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: azure-vote-back
+  name: redis-app
 spec:
   ports:
   - port: 6379
   selector:
-    app: azure-vote-back
+    app: redis-app
 ---
-apiVersion: apps/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: azure-vote-front
+  name: ms-name
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      app: ms-name
   strategy:
     rollingUpdate:
       maxSurge: 1
@@ -42,13 +46,11 @@ spec:
   template:
     metadata:
       labels:
-        app: azure-vote-front
+        app: ms-name
     spec:
-      nodeSelector:
-        "beta.kubernetes.io/os": linux
       containers:
-      - name: azure-vote-front
-        image: blackdentech/jenkins-course:latest
+      - name: ms-name
+        image: nexus:8082/demodocker/project_name/test:latest
         ports:
         - containerPort: 80
         resources:
@@ -58,15 +60,31 @@ spec:
             cpu: 500m
         env:
         - name: REDIS
-          value: "azure-vote-back"
+          value: "redis-app"
+      imagePullSecrets:
+      - name: regcred
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: azure-vote-front
+  name: ms-name
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   ports:
   - port: 80
   selector:
-    app: azure-vote-front
+    app: ms-name
+---
+ apiVersion: networking.k8s.io/v1beta1
+ kind: Ingress
+ metadata:
+   name: ms-name.project_name.local
+ spec:
+   rules:
+   - host: ms-name.project_name.local
+     http:
+       paths:
+       - path: /
+         backend:
+           serviceName: ms-name
+           servicePort: 80
